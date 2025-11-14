@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { Sparkles, ArrowUp, Image as ImageIcon, Heart, Zap, Shield, Star, Check } from 'lucide-react';
 import Image from 'next/image';
 import { db } from '@/lib/db';
-import { users } from '@/lib/db/schema';
+import { users, photos } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { PhotoSearchCombined } from '@/components/PhotoSearchCombined';
 
 export default async function Home() {
   const { userId } = await auth();
@@ -21,12 +22,39 @@ export default async function Home() {
         // User hasn't completed onboarding
         redirect('/onboarding');
       } else {
-        // User has completed onboarding
-        redirect('/swipe');
+        // Check if user has completed onboarding (has photos and gender preference)
+        const userPhotos = await db
+          .select()
+          .from(photos)
+          .where(eq(photos.userId, user.id));
+        
+        const hasPhotos = userPhotos && userPhotos.length > 0;
+        const hasGender = user.preferences && (user.preferences as any)?.gender && (user.preferences as any)?.gender !== 'prefer-not-to-say';
+        
+        console.log('[LANDING] User check:', {
+          userId: user.id,
+          hasPhotos,
+          photosCount: userPhotos?.length || 0,
+          hasGender,
+          gender: (user.preferences as any)?.gender,
+        });
+        
+        if (!hasPhotos || !hasGender) {
+          // User hasn't completed onboarding properly
+          console.log('[LANDING] User exists but missing photos or gender. Redirecting to onboarding.');
+          redirect('/onboarding');
+        } else {
+          // User has completed onboarding
+          redirect('/swipe');
+        }
       }
     } catch (error) {
       // If database query fails (e.g., table doesn't exist), redirect to onboarding
       // This handles cases where the database schema hasn't been set up yet
+      // Re-throw redirect errors (they're expected and handled by Next.js)
+      if (error && typeof error === 'object' && 'digest' in error && typeof error.digest === 'string' && error.digest.startsWith('NEXT_REDIRECT')) {
+        throw error;
+      }
       console.error('Database query error:', error);
       redirect('/onboarding');
     }
@@ -123,159 +151,28 @@ export default async function Home() {
             </p>
           </div>
 
-          {/* Main Interactive Section */}
-          <div className="max-w-4xl mx-auto">
-            {/* Photo Upload Section - Mobile Optimized */}
-            <div className="relative bg-gradient-to-br from-white to-gray-50 rounded-3xl border-2 border-dashed border-gray-300 p-6 md:p-10 mb-6 hover:border-[#8B5CF6] hover:shadow-2xl transition-all duration-300 group overflow-hidden">
-              {/* Decorative background pattern */}
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-[#8B5CF6]/5 rounded-full blur-2xl"></div>
-                <div className="absolute bottom-0 left-0 w-32 h-32 bg-purple-400/5 rounded-full blur-2xl"></div>
-              </div>
-              
-              <div className="relative z-10 flex flex-col items-center text-center">
-                {/* Icon */}
-                <div className="relative mb-6">
-                  <div className="w-20 h-20 md:w-24 md:h-24 bg-gradient-to-br from-[#8B5CF6]/10 to-[#7C3AED]/5 rounded-3xl flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-sm border border-[#8B5CF6]/10">
-                    <svg className="w-10 h-10 md:w-12 md:h-12 text-[#8B5CF6]/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                  </div>
-                  {/* Pulsing ring */}
-                  <div className="absolute inset-0 rounded-3xl border-2 border-[#8B5CF6]/20 animate-ping opacity-10"></div>
-                </div>
-                
-                {/* Text Content */}
-                <div className="mb-6">
-                  <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
-                    Upload Your Photo
-                  </h3>
-                  <p className="text-sm md:text-base text-gray-600 max-w-md mx-auto leading-relaxed">
-                    See how clothes look on <span className="font-semibold text-[#8B5CF6]">you</span> with AI try-on
-                    <br className="hidden sm:block" />
-                    <span className="text-xs text-gray-500 mt-1 block">Supports JPG, PNG • Max 10MB</span>
-                  </p>
-                </div>
-                
-                {/* Action Button */}
-                <Link
-                  href="/sign-up"
-                  className="relative group/btn w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-[#8B5CF6]/90 to-[#7C3AED]/90 text-white rounded-xl hover:from-[#8B5CF6] hover:to-[#7C3AED] transition-all font-medium text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 flex items-center justify-center gap-2 overflow-hidden"
-                  style={{
-                    background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.9), rgba(124, 58, 237, 0.9))',
-                    animation: 'borderAnimation 3s linear infinite'
-                  }}
-                >
-                  <div className="absolute inset-0 rounded-xl opacity-0 group-hover/btn:opacity-100 transition-opacity duration-500"
-                    style={{
-                      background: 'linear-gradient(90deg, #8B5CF6, #7C3AED, #8B5CF6)',
-                      backgroundSize: '200% 100%',
-                      animation: 'shimmer 2s linear infinite'
-                    }}
-                  ></div>
-                  <svg className="w-4 h-4 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span className="relative z-10">Choose Your Photo</span>
-                  <ArrowUp className="w-4 h-4 rotate-90 group-hover/btn:translate-x-1 transition-transform relative z-10" />
-                </Link>
-                
-                {/* Mobile-friendly hint */}
-                <p className="text-xs text-gray-500 mt-4 flex items-center gap-2">
-                  <svg className="w-4 h-4 text-[#8B5CF6]/40" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                  </svg>
-                  Your photos are private and secure
-                </p>
-              </div>
-            </div>
+          {/* Main Interactive Section - Combined Photo Upload and Search */}
+          <PhotoSearchCombined />
 
-            {/* Or Divider */}
-            <div className="relative mb-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-white text-gray-500 font-medium">Or search without uploading</span>
-              </div>
+          {/* Trust Indicators - Mobile Optimized */}
+          <div className="flex flex-wrap items-center justify-center gap-4 md:gap-8 mt-8 text-xs md:text-sm text-gray-500">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 md:w-5 md:h-5 text-[#8B5CF6]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="whitespace-nowrap">Free forever</span>
             </div>
-            
-            {/* Enhanced Prompt Input Field - Mobile Optimized */}
-            <div className="bg-white rounded-2xl border-2 border-gray-300 shadow-xl hover:border-[#8B5CF6] focus-within:border-[#8B5CF6] transition-all overflow-hidden">
-              <div className="p-4 md:p-6">
-                <textarea
-                  placeholder="Try: 'Show me a black leather jacket from Zara' or 'I need a red Gucci handbag for a wedding'"
-                  rows={3}
-                  className="w-full text-base md:text-lg text-gray-900 placeholder-gray-400 resize-none focus:outline-none"
-                ></textarea>
-                
-                {/* Filters and Button - Stacked on Mobile */}
-                <div className="flex flex-col gap-3 pt-4 border-t border-gray-200 mt-4">
-                  {/* Filters Row */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-2 flex-1 min-w-[140px]">
-                      <span className="text-xs md:text-sm text-gray-600 font-medium whitespace-nowrap">Gender:</span>
-                      <select className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border-0 focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]/20 cursor-pointer">
-                        <option>Unisex</option>
-                        <option>Women</option>
-                        <option>Men</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-2 flex-1 min-w-[140px]">
-                      <span className="text-xs md:text-sm text-gray-600 font-medium whitespace-nowrap">Style:</span>
-                      <select className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border-0 focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]/20 cursor-pointer">
-                        <option>All Styles</option>
-                        <option>Casual</option>
-                        <option>Formal</option>
-                        <option>Streetwear</option>
-                        <option>Luxury</option>
-                        <option>Vintage</option>
-                      </select>
-                    </div>
-                  </div>
-                  
-                  {/* Search Button - Full Width on Mobile */}
-                  <button className="relative w-full px-5 py-2.5 bg-gradient-to-r from-[#8B5CF6]/90 to-[#7C3AED]/90 text-white rounded-xl hover:from-[#8B5CF6] hover:to-[#7C3AED] transition-all font-medium text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 flex items-center justify-center gap-2 group overflow-hidden"
-                    style={{
-                      background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.9), rgba(124, 58, 237, 0.9))',
-                    }}
-                  >
-                    <div className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                      style={{
-                        background: 'linear-gradient(90deg, #8B5CF6, #7C3AED, #8B5CF6)',
-                        backgroundSize: '200% 100%',
-                        animation: 'shimmer 2s linear infinite'
-                      }}
-                    ></div>
-                    <span className="relative z-10">Search</span>
-                    <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 md:w-5 md:h-5 text-[#8B5CF6]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <span className="whitespace-nowrap">Data is private</span>
             </div>
-
-            {/* Trust Indicators - Mobile Optimized */}
-            <div className="flex flex-wrap items-center justify-center gap-4 md:gap-8 mt-8 text-xs md:text-sm text-gray-500">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 md:w-5 md:h-5 text-[#8B5CF6]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                <span className="whitespace-nowrap">Free forever</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 md:w-5 md:h-5 text-[#8B5CF6]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                <span className="whitespace-nowrap">Data is private</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 md:w-5 md:h-5 text-[#8B5CF6]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                <span className="whitespace-nowrap">Instant results</span>
-              </div>
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 md:w-5 md:h-5 text-[#8B5CF6]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span className="whitespace-nowrap">Instant results</span>
             </div>
           </div>
 

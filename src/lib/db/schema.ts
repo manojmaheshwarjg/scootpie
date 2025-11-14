@@ -11,6 +11,7 @@ export const users = pgTable('app_users', {
     sizes?: { top?: string; bottom?: string; shoes?: string };
     budgetRange?: [number, number];
     styleQuizResponses?: Record<string, any>;
+    gender?: 'men' | 'women' | 'unisex' | 'non-binary' | 'prefer-not-to-say';
   }>(),
   primaryPhotoId: uuid('primary_photo_id'),
 });

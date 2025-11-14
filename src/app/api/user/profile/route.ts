@@ -15,6 +15,14 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { name, preferences, photoUrls, primaryPhotoIndex } = body;
+    
+    console.log('[PROFILE API] POST request received:', {
+      hasName: !!name,
+      hasPreferences: !!preferences,
+      preferences: JSON.stringify(preferences, null, 2),
+      photoUrlsCount: photoUrls?.length || 0,
+      primaryPhotoIndex,
+    });
 
     // Check if user already exists
     // Using select instead of query API for better error handling
@@ -27,25 +35,100 @@ export async function POST(req: NextRequest) {
     let dbUser;
 
     if (existingUser) {
+      // Merge preferences if updating existing user
+      console.log('[PROFILE API] Incoming preferences:', JSON.stringify(preferences, null, 2));
+      console.log('[PROFILE API] Existing preferences:', JSON.stringify(existingUser.preferences, null, 2));
+      
+      // Clean preferences: remove empty strings and undefined values
+      const cleanPreferences = preferences ? {
+        ...(preferences.gender && preferences.gender.trim() !== '' ? { gender: preferences.gender.trim() } : {}),
+        sizes: preferences.sizes ? {
+          ...(preferences.sizes.top && preferences.sizes.top.trim() !== '' ? { top: preferences.sizes.top.trim() } : {}),
+          ...(preferences.sizes.bottom && preferences.sizes.bottom.trim() !== '' ? { bottom: preferences.sizes.bottom.trim() } : {}),
+          ...(preferences.sizes.shoes && preferences.sizes.shoes.trim() !== '' ? { shoes: preferences.sizes.shoes.trim() } : {}),
+        } : undefined,
+        ...(preferences.budgetRange ? { budgetRange: preferences.budgetRange } : {}),
+      } : {};
+      
+      // Remove empty sizes object if it has no properties
+      if (cleanPreferences.sizes && Object.keys(cleanPreferences.sizes).length === 0) {
+        delete cleanPreferences.sizes;
+      }
+      
+      let mergedPreferences = existingUser.preferences || {};
+      if (Object.keys(cleanPreferences).length > 0) {
+        mergedPreferences = {
+          ...mergedPreferences,
+          ...cleanPreferences,
+          sizes: {
+            ...(mergedPreferences as any)?.sizes,
+            ...cleanPreferences.sizes,
+          },
+        };
+        
+        // Clean up merged sizes - remove empty strings
+        if (mergedPreferences.sizes) {
+          Object.keys(mergedPreferences.sizes).forEach(key => {
+            if (!mergedPreferences.sizes[key] || mergedPreferences.sizes[key] === '') {
+              delete mergedPreferences.sizes[key];
+            }
+          });
+          // Remove sizes object if empty
+          if (Object.keys(mergedPreferences.sizes).length === 0) {
+            delete mergedPreferences.sizes;
+          }
+        }
+      }
+      
+      console.log('[PROFILE API] Updating existing user. Clean preferences:', JSON.stringify(cleanPreferences, null, 2));
+      console.log('[PROFILE API] Merged preferences:', JSON.stringify(mergedPreferences, null, 2));
+      
       // Update existing user
       await db
         .update(users)
         .set({
           name: name || existingUser.name,
-          preferences: preferences || existingUser.preferences,
+          preferences: mergedPreferences,
         })
         .where(eq(users.id, existingUser.id));
       
-      dbUser = existingUser;
+      // Fetch updated user
+      const [updatedUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, existingUser.id))
+        .limit(1);
+      
+      dbUser = updatedUser || existingUser;
     } else {
       // Create new user
+      console.log('[PROFILE API] Creating new user with preferences:', JSON.stringify(preferences, null, 2));
+      
+      // Clean preferences: remove empty strings and undefined values
+      const cleanPreferences = preferences ? {
+        ...(preferences.gender && preferences.gender.trim() !== '' ? { gender: preferences.gender.trim() } : {}),
+        sizes: preferences.sizes ? {
+          ...(preferences.sizes.top && preferences.sizes.top.trim() !== '' ? { top: preferences.sizes.top.trim() } : {}),
+          ...(preferences.sizes.bottom && preferences.sizes.bottom.trim() !== '' ? { bottom: preferences.sizes.bottom.trim() } : {}),
+          ...(preferences.sizes.shoes && preferences.sizes.shoes.trim() !== '' ? { shoes: preferences.sizes.shoes.trim() } : {}),
+        } : undefined,
+        ...(preferences.budgetRange ? { budgetRange: preferences.budgetRange } : {}),
+      } : {};
+      
+      // Remove empty sizes object if it has no properties
+      if (cleanPreferences.sizes && Object.keys(cleanPreferences.sizes).length === 0) {
+        delete cleanPreferences.sizes;
+      }
+      
+      console.log('[PROFILE API] Creating new user. Clean preferences:', JSON.stringify(cleanPreferences, null, 2));
+      
       const [newUser] = await db
         .insert(users)
         .values({
           clerkId: userId,
           email: clerkUser.emailAddresses[0]?.emailAddress || '',
           name: name || clerkUser.fullName || clerkUser.firstName || 'User',
-          preferences,
+          preferences: Object.keys(cleanPreferences).length > 0 ? cleanPreferences : undefined,
         })
         .returning();
       
@@ -60,31 +143,133 @@ export async function POST(req: NextRequest) {
     }
 
     // Save photos if provided (limit to max 5)
+    // Most recently uploaded photo becomes primary by default
     if (photoUrls && photoUrls.length > 0) {
-      const limited = photoUrls.slice(0, 5);
-      for (let i = 0; i < limited.length; i++) {
-        const [photo] = await db
-          .insert(photos)
-          .values({
-            userId: dbUser.id,
-            url: limited[i],
-            isPrimary: i === (typeof primaryPhotoIndex === 'number' ? primaryPhotoIndex : 0),
-          })
-          .returning();
+      // Check if user already has photos
+      const existingPhotos = await db
+        .select()
+        .from(photos)
+        .where(eq(photos.userId, dbUser.id));
+      
+      console.log('[PROFILE API] Photo handling:', {
+        photoUrlsCount: photoUrls.length,
+        existingPhotosCount: existingPhotos.length,
+        isExistingUser: !!existingUser,
+        incomingPhotos: photoUrls.map(url => url.substring(0, 100)),
+        existingPhotos: existingPhotos.map(p => ({ id: p.id, isPrimary: p.isPrimary, url: p.url.substring(0, 100) })),
+      });
+      
+      // Check for duplicates by comparing URLs (for base64 data URLs, use longer signature for better accuracy)
+      const existingUrls = new Set(existingPhotos.map(p => {
+        // For data URLs, use first 1000 chars as signature to detect duplicates more accurately
+        // This includes more of the image data while still being efficient
+        return p.url.startsWith('data:') ? p.url.substring(0, 1000) : p.url;
+      }));
+      
+      const newPhotoUrls = photoUrls.filter(url => {
+        const signature = url.startsWith('data:') ? url.substring(0, 1000) : url;
+        const isDuplicate = existingUrls.has(signature);
+        if (isDuplicate) {
+          console.log('[PROFILE API] Skipping duplicate photo (matched first 1000 chars)');
+        }
+        return !isDuplicate;
+      });
+      
+      console.log('[PROFILE API] After duplicate check:', {
+        newPhotoUrlsCount: newPhotoUrls.length,
+        skipped: photoUrls.length - newPhotoUrls.length,
+      });
+      
+      if (newPhotoUrls.length > 0) {
+        const limited = newPhotoUrls.slice(0, 5 - existingPhotos.length);
+        const primaryIndex = typeof primaryPhotoIndex === 'number' 
+          ? primaryPhotoIndex 
+          : limited.length - 1; // Default to last photo (most recent)
+        
+        let primaryPhotoId: string | null = null;
+        
+        // First, set all existing photos to non-primary
+        if (existingPhotos.length > 0) {
+          await db.update(photos)
+            .set({ isPrimary: false })
+            .where(eq(photos.userId, dbUser.id));
+        }
+        
+        for (let i = 0; i < limited.length; i++) {
+          const [photo] = await db
+            .insert(photos)
+            .values({
+              userId: dbUser.id,
+              url: limited[i],
+              isPrimary: i === primaryIndex,
+            })
+            .returning();
 
-        // Set primary photo ID
-        if (i === (typeof primaryPhotoIndex === 'number' ? primaryPhotoIndex : 0)) {
+          // Track primary photo ID
+          if (i === primaryIndex) {
+            primaryPhotoId = photo.id;
+          }
+        }
+        
+        // Set primary photo ID in users table
+        if (primaryPhotoId) {
           await db
             .update(users)
-            .set({ primaryPhotoId: photo.id })
+            .set({ primaryPhotoId })
             .where(eq(users.id, dbUser.id));
+          
+          console.log('[PROFILE API] Set primary photo:', primaryPhotoId);
+        }
+        
+        console.log('[PROFILE API] Photos added successfully:', limited.length);
+      } else {
+        console.log('[PROFILE API] All photos already exist, skipping duplicate addition');
+        
+        // Even if no new photos, ensure only one primary exists
+        const primaryPhotos = existingPhotos.filter(p => p.isPrimary);
+        if (primaryPhotos.length !== 1) {
+          console.log('[PROFILE API] WARNING: Found', primaryPhotos.length, 'primary photos. Fixing...');
+          
+          // Set all to non-primary first
+          await db.update(photos)
+            .set({ isPrimary: false })
+            .where(eq(photos.userId, dbUser.id));
+          
+          // Set the first photo as primary (or most recent if available)
+          const photoToSetPrimary = existingPhotos[existingPhotos.length - 1] || existingPhotos[0];
+          if (photoToSetPrimary) {
+            await db.update(photos)
+              .set({ isPrimary: true })
+              .where(eq(photos.id, photoToSetPrimary.id));
+            
+            await db.update(users)
+              .set({ primaryPhotoId: photoToSetPrimary.id })
+              .where(eq(users.id, dbUser.id));
+            
+            console.log('[PROFILE API] Fixed: Set', photoToSetPrimary.id, 'as primary');
+          }
         }
       }
     }
 
+    // Fetch user with photos for response
+    const userPhotos = await db
+      .select()
+      .from(photos)
+      .where(eq(photos.userId, dbUser.id));
+    
+    const userWithPhotos = {
+      ...dbUser,
+      photos: userPhotos,
+    };
+    
+    console.log('[PROFILE API] Returning user with', userPhotos.length, 'photos');
+    console.log('[PROFILE API] Photo URLs:', userPhotos.map(p => p.url.substring(0, 50) + '...'));
+    console.log('[PROFILE API] Preferences:', JSON.stringify(dbUser.preferences, null, 2));
+    
     return NextResponse.json({
       success: true,
-      user: dbUser,
+      user: userWithPhotos,
       message: 'Profile created successfully',
     });
   } catch (error) {
@@ -151,6 +336,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+    console.log('[PROFILE API] GET - User preferences from DB:', JSON.stringify(user.preferences, null, 2));
+
     // Get user's photos separately
     const userPhotos = await db
       .select()
@@ -161,6 +348,8 @@ export async function GET(req: NextRequest) {
       ...user,
       photos: userPhotos,
     };
+
+    console.log('[PROFILE API] GET - Returning user with', userPhotos.length, 'photos');
 
     return NextResponse.json({ user: userWithPhotos });
   } catch (error) {

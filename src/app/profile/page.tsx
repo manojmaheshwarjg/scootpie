@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Camera, X, Upload, Loader2 } from 'lucide-react';
 import { Navigation } from '@/components/Navigation';
 import Image from 'next/image';
@@ -33,8 +34,10 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [preferences, setPreferences] = useState({
+    gender: '',
     topSize: '',
     bottomSize: '',
+    shoeSize: '',
     budgetMin: '',
     budgetMax: '',
   });
@@ -70,15 +73,21 @@ export default function ProfilePage() {
         setProfile(data.user);
         
         // Set preferences from profile
+        console.log('⚙️ [PROFILE] Raw preferences from API:', JSON.stringify(data.user.preferences, null, 2));
+        
         if (data.user.preferences) {
           const prefs = {
+            gender: data.user.preferences.gender || '',
             topSize: data.user.preferences.sizes?.top || '',
             bottomSize: data.user.preferences.sizes?.bottom || '',
+            shoeSize: data.user.preferences.sizes?.shoes || '',
             budgetMin: data.user.preferences.budgetRange?.[0]?.toString() || '',
             budgetMax: data.user.preferences.budgetRange?.[1]?.toString() || '',
           };
-          console.log('⚙️ [PROFILE] Setting preferences:', prefs);
+          console.log('⚙️ [PROFILE] Setting preferences:', JSON.stringify(prefs, null, 2));
           setPreferences(prefs);
+        } else {
+          console.warn('⚠️ [PROFILE] No preferences found in user data');
         }
       } else {
         const errorText = await response.text();
@@ -298,20 +307,53 @@ export default function ProfilePage() {
 
   const handleSavePreferences = async () => {
     console.log('💾 [PROFILE] Saving preferences:', preferences);
+    
+    // Validate gender is required
+    if (!preferences.gender || preferences.gender === 'prefer-not-to-say') {
+      alert('Gender is required for virtual try-on. Please select your gender preference.');
+      return;
+    }
+    
     setSaving(true);
     try {
-      const prefsData = {
-        preferences: {
-          sizes: {
-            top: preferences.topSize,
-            bottom: preferences.bottomSize,
-          },
-          budgetRange:
-            preferences.budgetMin && preferences.budgetMax
-              ? [parseInt(preferences.budgetMin), parseInt(preferences.budgetMax)]
-              : undefined,
-        },
+      // Only include non-empty values
+      const prefsData: any = {
+        preferences: {},
       };
+      
+      // Only add gender if it's set and not empty
+      if (preferences.gender && preferences.gender.trim() !== '' && preferences.gender !== 'prefer-not-to-say') {
+        prefsData.preferences.gender = preferences.gender;
+      }
+      
+      // Only add sizes if at least one is set
+      const sizes: any = {};
+      if (preferences.topSize && preferences.topSize.trim() !== '') {
+        sizes.top = preferences.topSize;
+      }
+      if (preferences.bottomSize && preferences.bottomSize.trim() !== '') {
+        sizes.bottom = preferences.bottomSize;
+      }
+      if (preferences.shoeSize && preferences.shoeSize.trim() !== '') {
+        sizes.shoes = preferences.shoeSize;
+      }
+      if (Object.keys(sizes).length > 0) {
+        prefsData.preferences.sizes = sizes;
+      }
+      
+      // Only add budget range if both min and max are set
+      if (preferences.budgetMin && preferences.budgetMax) {
+        const min = parseInt(preferences.budgetMin);
+        const max = parseInt(preferences.budgetMax);
+        if (!isNaN(min) && !isNaN(max) && min > 0 && max > 0) {
+          prefsData.preferences.budgetRange = [min, max];
+        }
+      }
+      
+      // Remove preferences object if it's empty
+      if (Object.keys(prefsData.preferences).length === 0) {
+        delete prefsData.preferences;
+      }
       
       console.log('📤 [PROFILE] Sending preferences:', prefsData);
       
@@ -474,32 +516,20 @@ export default function ProfilePage() {
                         alt="Profile photo"
                         className="w-full h-full object-cover"
                       />
+                      
+                      {/* Delete button - always visible on mobile, hover on desktop */}
                       <button
                         onClick={() => {
                           console.log('🖱️ [PROFILE] Delete button clicked for:', photo.id);
                           handleRemovePhoto(photo.id);
                         }}
-                        className="absolute top-2 right-2 bg-white text-[#1A1A1A] rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition hover:scale-110 z-10 shadow-md border border-[#E8E8E6]"
+                        className="absolute top-2 right-2 bg-white text-[#1A1A1A] rounded-full p-1.5 lg:opacity-0 lg:group-hover:opacity-100 transition hover:scale-110 z-10 shadow-md border border-[#E8E8E6]"
                         title="Delete photo"
                       >
                         <X className="h-3 w-3" />
                       </button>
 
-                      {/* Replace photo */}
-                      <label className="absolute top-2 left-2 bg-white/95 backdrop-blur-sm text-[#1A1A1A] text-xs px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition cursor-pointer z-10 border border-[#E8E8E6] shadow-sm">
-                        Replace
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) handleReplacePhoto(photo.id, f);
-                          }}
-                          disabled={uploading}
-                        />
-                      </label>
-
+                      {/* Primary badge or Set Primary button - always visible */}
                       {photo.isPrimary ? (
                         <div className="absolute bottom-2 left-2 bg-[#1A1A1A] text-white text-xs px-2 py-1 rounded-full font-medium shadow-sm">
                           ⭐ Primary
@@ -507,10 +537,10 @@ export default function ProfilePage() {
                       ) : (
                         <button
                           onClick={() => handleSetPrimary(photo.id)}
-                          className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm text-[#1A1A1A] text-xs px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition hover:bg-white border border-[#E8E8E6] shadow-sm"
+                          className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm text-[#1A1A1A] text-xs px-2 py-1 rounded-full lg:opacity-0 lg:group-hover:opacity-100 transition hover:bg-white border border-[#E8E8E6] shadow-sm"
                           title="Set as primary"
                         >
-                          Set Primary
+                          Make Primary
                         </button>
                       )}
                     </div>
@@ -552,27 +582,100 @@ export default function ProfilePage() {
           <h2 className="text-lg font-serif font-bold text-[#1A1A1A] mb-1 tracking-[-0.02em]">Style Preferences</h2>
           <p className="text-xs text-[#5A5A5A] mb-4 font-light">Update your sizing and preferences</p>
           <div className="space-y-4">
+            <div>
+              <Label htmlFor="gender" className="text-xs font-medium text-[#1A1A1A]">Gender <span className="text-red-500">*</span></Label>
+              <p className="text-xs text-[#5A5A5A] mt-1 mb-2">Required for virtual try-on</p>
+              <Select
+                id="gender"
+                value={preferences.gender}
+                onChange={(e) => setPreferences({ ...preferences, gender: e.target.value })}
+                className="mt-2 rounded-full"
+                required
+              >
+                <option value="">Select gender</option>
+                <option value="men">Men</option>
+                <option value="women">Women</option>
+                <option value="unisex">Unisex</option>
+                <option value="non-binary">Non-binary</option>
+                <option value="prefer-not-to-say">Prefer not to say</option>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="topSize" className="text-xs font-medium text-[#1A1A1A]">Top Size</Label>
-                <Input
+                <Select
                   id="topSize"
                   value={preferences.topSize}
                   onChange={(e) => setPreferences({ ...preferences, topSize: e.target.value })}
-                  placeholder="S, M, L, XL"
-                  className="mt-2 rounded-full border border-[#E8E8E6] focus:border-[#1A1A1A] focus:ring-2 focus:ring-[#1A1A1A]/10 transition-all shadow-sm"
-                />
+                  className="mt-2 rounded-full"
+                >
+                  <option value="">Select size</option>
+                  <option value="XS">XS</option>
+                  <option value="S">S</option>
+                  <option value="M">M</option>
+                  <option value="L">L</option>
+                  <option value="XL">XL</option>
+                  <option value="XXL">XXL</option>
+                  <option value="2X">2X</option>
+                  <option value="3X">3X</option>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="bottomSize" className="text-xs font-medium text-[#1A1A1A]">Bottom Size</Label>
-                <Input
+                <Select
                   id="bottomSize"
                   value={preferences.bottomSize}
                   onChange={(e) => setPreferences({ ...preferences, bottomSize: e.target.value })}
-                  placeholder="28, 30, 32"
-                  className="mt-2 rounded-full border border-[#E8E8E6] focus:border-[#1A1A1A] focus:ring-2 focus:ring-[#1A1A1A]/10 transition-all shadow-sm"
-                />
+                  className="mt-2 rounded-full"
+                >
+                  <option value="">Select size</option>
+                  <option value="26">26</option>
+                  <option value="28">28</option>
+                  <option value="30">30</option>
+                  <option value="32">32</option>
+                  <option value="34">34</option>
+                  <option value="36">36</option>
+                  <option value="38">38</option>
+                  <option value="40">40</option>
+                  <option value="42">42</option>
+                  <option value="XS">XS</option>
+                  <option value="S">S</option>
+                  <option value="M">M</option>
+                  <option value="L">L</option>
+                  <option value="XL">XL</option>
+                </Select>
               </div>
+            </div>
+            <div>
+              <Label htmlFor="shoeSize" className="text-xs font-medium text-[#1A1A1A]">Shoe Size (US)</Label>
+              <Select
+                id="shoeSize"
+                value={preferences.shoeSize}
+                onChange={(e) => setPreferences({ ...preferences, shoeSize: e.target.value })}
+                className="mt-2 rounded-full"
+              >
+                <option value="">Select size</option>
+                <option value="5">5</option>
+                <option value="5.5">5.5</option>
+                <option value="6">6</option>
+                <option value="6.5">6.5</option>
+                <option value="7">7</option>
+                <option value="7.5">7.5</option>
+                <option value="8">8</option>
+                <option value="8.5">8.5</option>
+                <option value="9">9</option>
+                <option value="9.5">9.5</option>
+                <option value="10">10</option>
+                <option value="10.5">10.5</option>
+                <option value="11">11</option>
+                <option value="11.5">11.5</option>
+                <option value="12">12</option>
+                <option value="12.5">12.5</option>
+                <option value="13">13</option>
+                <option value="13.5">13.5</option>
+                <option value="14">14</option>
+                <option value="15">15</option>
+              </Select>
             </div>
             <div>
               <Label className="text-xs font-medium text-[#1A1A1A]">Budget Range</Label>
@@ -595,7 +698,7 @@ export default function ProfilePage() {
             </div>
             <button 
               onClick={handleSavePreferences} 
-              disabled={saving} 
+              disabled={saving || !preferences.gender || preferences.gender === 'prefer-not-to-say'} 
               className="relative rounded-xl bg-gradient-to-r from-[#8B5CF6]/90 to-[#7C3AED]/90 px-5 py-2.5 text-sm font-medium text-white transition-all disabled:opacity-50 shadow-lg hover:shadow-xl hover:-translate-y-0.5 overflow-hidden group"
               style={{
                 background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.9), rgba(124, 58, 237, 0.9))',

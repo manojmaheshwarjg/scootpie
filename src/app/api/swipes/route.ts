@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { auth, currentUser } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { users, swipes, collectionItems, collections, products } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -42,13 +42,55 @@ export async function POST(req: NextRequest) {
       };
     };
 
-    // Get user from database
-    const user = await db.query.users.findFirst({
-      where: eq(users.clerkId, userId),
-    });
+    // Get user from database - use select for better error handling
+    let [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.clerkId, userId))
+      .limit(1);
 
+    // If user doesn't exist, create a minimal user record
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      console.warn('[SWIPES] User not found in database, creating minimal user record for Clerk ID:', userId);
+      const clerkUser = await currentUser();
+      
+      if (!clerkUser) {
+        return NextResponse.json({ 
+          error: 'Unable to retrieve user information.',
+          code: 'USER_NOT_FOUND'
+        }, { status: 401 });
+      }
+
+      // Create minimal user record
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          clerkId: userId,
+          email: clerkUser.emailAddresses[0]?.emailAddress || '',
+          name: clerkUser.fullName || clerkUser.firstName || 'User',
+        })
+        .returning();
+      
+      user = newUser;
+      
+      // Create default "Likes" collection for the new user
+      await db.insert(collections).values({
+        userId: user.id,
+        name: 'Likes',
+        isDefault: true,
+      });
+      
+      console.log('[SWIPES] Created new user:', {
+        id: user.id,
+        clerkId: user.clerkId,
+        name: user.name,
+      });
+    } else {
+      console.log('[SWIPES] Found user:', {
+        id: user.id,
+        clerkId: user.clerkId,
+        name: user.name,
+      });
     }
 
     // Validate sessionId is a valid UUID format, generate new one if invalid
@@ -107,14 +149,66 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Save swipe to database (using ensuredProductId)
-    await db.insert(swipes).values({
-      userId: user.id,
+    // Verify user exists in database before inserting (double-check)
+    const [verifyUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
+    
+    if (!verifyUser) {
+      console.error('[SWIPES] User verification failed - user ID not found:', user.id);
+      return NextResponse.json({ 
+        error: 'User record not found. Please complete your profile setup.',
+        code: 'USER_NOT_FOUND'
+      }, { status: 404 });
+    }
+    
+    console.log('[SWIPES] User verified, proceeding with swipe insert:', {
+      userId: verifyUser.id,
       productId: ensuredProductId,
-      direction: direction as 'left' | 'right' | 'up',
-      sessionId: validSessionId,
-      cardPosition,
+      direction,
     });
+
+    // Save swipe to database (using ensuredProductId)
+    try {
+      await db.insert(swipes).values({
+        userId: verifyUser.id, // Use verified user ID
+        productId: ensuredProductId,
+        direction: direction as 'left' | 'right' | 'up',
+        sessionId: validSessionId,
+        cardPosition,
+      });
+      console.log('[SWIPES] Swipe saved successfully');
+    } catch (insertError: any) {
+      console.error('[SWIPES] Error inserting swipe:', {
+        error: insertError.message,
+        code: insertError.code,
+        detail: insertError.detail,
+        userId: verifyUser.id,
+        clerkId: verifyUser.clerkId,
+        productId: ensuredProductId,
+      });
+      
+      // Check if it's a foreign key constraint error
+      if (insertError.code === '23503' || insertError.message?.includes('foreign key constraint')) {
+        console.error('[SWIPES] Foreign key violation detected');
+        console.error('[SWIPES] Error detail:', insertError.detail);
+        
+        // Try to get more info about the constraint
+        if (insertError.detail) {
+          console.error('[SWIPES] Constraint detail:', insertError.detail);
+        }
+        
+        return NextResponse.json({ 
+          error: 'Database constraint error. Please try again or contact support.',
+          code: 'FOREIGN_KEY_ERROR',
+          detail: insertError.detail,
+        }, { status: 500 });
+      }
+      
+      throw insertError; // Re-throw if it's a different error
+    }
 
     // If swipe right (like), add to default collection (create if missing)
     if (direction === 'right') {
@@ -178,13 +272,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user from database
-    const user = await db.query.users.findFirst({
-      where: eq(users.clerkId, userId),
-    });
+    // Get user from database - use select for consistency
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.clerkId, userId))
+      .limit(1);
 
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return NextResponse.json({ 
+        error: 'User not found. Please complete your profile setup first.',
+        code: 'USER_NOT_FOUND'
+      }, { status: 404 });
     }
 
     // Fetch user's swipes

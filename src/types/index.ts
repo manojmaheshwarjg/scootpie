@@ -39,6 +39,7 @@ export interface UserPreferences {
   };
   budgetRange?: [number, number];
   styleQuizResponses?: Record<string, any>;
+  gender?: 'men' | 'women' | 'unisex' | 'non-binary' | 'prefer-not-to-say';
 }
 
 export interface Photo {

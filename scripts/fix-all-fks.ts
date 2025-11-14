@@ -14,7 +14,7 @@ async function fixAllForeignKeys() {
   try {
     console.log('🔧 Fixing all foreign key constraints to point to app_users...\n');
 
-    const tables = ['collections', 'photos'];
+    const tables = ['collections', 'photos', 'swipes', 'conversations', 'try_on_cache', 'user_style_profiles'];
     
     for (const tableName of tables) {
       console.log(`\n📋 Processing ${tableName} table...`);

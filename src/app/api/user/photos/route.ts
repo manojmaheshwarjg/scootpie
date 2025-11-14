@@ -34,21 +34,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Maximum 5 photos allowed' }, { status: 400 });
     }
 
-    // Add new photos
+    // Add new photos - most recently uploaded photo becomes primary
     const photosToAdd = photoUrls.slice(0, 5 - user.photos.length);
-    const hadNoPhotos = user.photos.length === 0;
-    let hasSetPrimary = false;
+    
+    // First, set all existing photos to non-primary
+    if (photosToAdd.length > 0) {
+      await db.update(photos)
+        .set({ isPrimary: false })
+        .where(eq(photos.userId, user.id));
+    }
+    
+    // Insert all new photos (none are primary yet)
+    const insertedPhotos = [];
     for (const url of photosToAdd) {
       const [inserted] = await db.insert(photos).values({
         userId: user.id,
         url,
-        isPrimary: hadNoPhotos && !hasSetPrimary, // Only the first inserted photo becomes primary when none exist
+        isPrimary: false, // Will set the last one as primary after all inserts
       }).returning();
-      if (hadNoPhotos && !hasSetPrimary) {
-        // Keep user's primaryPhotoId in sync
-        await db.update(users).set({ primaryPhotoId: inserted.id }).where(eq(users.id, user.id));
-        hasSetPrimary = true;
-      }
+      insertedPhotos.push(inserted);
+    }
+    
+    // Set the most recently uploaded photo (last in array) as primary
+    if (insertedPhotos.length > 0) {
+      const lastPhoto = insertedPhotos[insertedPhotos.length - 1];
+      await db.update(photos)
+        .set({ isPrimary: true })
+        .where(eq(photos.id, lastPhoto.id));
+      
+      // Update user's primaryPhotoId
+      await db.update(users)
+        .set({ primaryPhotoId: lastPhoto.id })
+        .where(eq(users.id, user.id));
     }
 
     return NextResponse.json({ success: true, message: 'Photos added successfully' });

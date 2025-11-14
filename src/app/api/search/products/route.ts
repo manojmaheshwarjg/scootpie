@@ -1,14 +1,127 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
-import { products } from '@/lib/db/schema';
-import { sql, or, ilike } from 'drizzle-orm';
+import { products, users } from '@/lib/db/schema';
+import { sql, or, ilike, eq } from 'drizzle-orm';
+
+// Helper function to enhance query with user preferences
+function enhanceQueryWithPreferences(query: string, userPreferences?: { gender?: string; sizes?: { top?: string; bottom?: string; shoes?: string } }): string {
+  if (!query.trim()) return query;
+  
+  const parts: string[] = [query];
+  
+  console.log('[ENHANCE] Starting enhancement. Query:', query, 'Preferences:', JSON.stringify(userPreferences));
+  
+  // Add gender if available
+  if (userPreferences?.gender && userPreferences.gender !== 'prefer-not-to-say') {
+    const genderMap: Record<string, string> = {
+      'men': 'men',
+      'women': 'women',
+      'unisex': 'unisex',
+      'non-binary': 'unisex', // Use unisex for non-binary
+    };
+    const genderTerm = genderMap[userPreferences.gender];
+    const queryLower = query.toLowerCase();
+    console.log('[ENHANCE] Gender check - gender:', userPreferences.gender, 'mapped to:', genderTerm, 'query contains:', queryLower.includes(genderTerm.toLowerCase()));
+    
+    if (genderTerm && !queryLower.includes(genderTerm.toLowerCase())) {
+      parts.push(genderTerm);
+      console.log('[ENHANCE] Added gender term:', genderTerm);
+    } else {
+      console.log('[ENHANCE] Gender term not added - already in query or invalid');
+    }
+  } else {
+    console.log('[ENHANCE] No gender to add - gender:', userPreferences?.gender);
+  }
+  
+  // Add size context if available (for tops/bottoms/shoes)
+  // For generic queries, add the most relevant size (top > bottom > shoes)
+  if (userPreferences?.sizes) {
+    const queryLower = query.toLowerCase();
+    const isTopQuery = ['shirt', 'top', 't-shirt', 'blouse', 'sweater', 'hoodie', 'jacket', 'coat', 'sweatshirt', 'cardigan', 'blazer', 'dress', 'apparel'].some(term => queryLower.includes(term));
+    const isBottomQuery = ['pants', 'jeans', 'trousers', 'shorts', 'skirt', 'leggings', 'tights'].some(term => queryLower.includes(term));
+    const isShoeQuery = ['shoe', 'shoes', 'sneaker', 'sneakers', 'boot', 'boots', 'sandal', 'sandals', 'heel', 'heels', 'slipper', 'slippers'].some(term => queryLower.includes(term));
+    
+    console.log('[ENHANCE] Size check - isTop:', isTopQuery, 'isBottom:', isBottomQuery, 'isShoe:', isShoeQuery);
+    console.log('[ENHANCE] Available sizes - top:', userPreferences.sizes.top, 'bottom:', userPreferences.sizes.bottom, 'shoes:', userPreferences.sizes.shoes);
+    
+    if (isTopQuery && userPreferences.sizes.top) {
+      parts.push(`size ${userPreferences.sizes.top}`);
+      console.log('[ENHANCE] Added top size:', userPreferences.sizes.top);
+    } else if (isBottomQuery && userPreferences.sizes.bottom) {
+      parts.push(`size ${userPreferences.sizes.bottom}`);
+      console.log('[ENHANCE] Added bottom size:', userPreferences.sizes.bottom);
+    } else if (isShoeQuery && userPreferences.sizes.shoes) {
+      parts.push(`size ${userPreferences.sizes.shoes}`);
+      console.log('[ENHANCE] Added shoe size:', userPreferences.sizes.shoes);
+    } else {
+      // For generic queries (like "trending fashion apparel"), add top size if available, otherwise bottom
+      // This helps narrow down results even for generic searches
+      if (userPreferences.sizes.top) {
+        parts.push(`size ${userPreferences.sizes.top}`);
+        console.log('[ENHANCE] Added top size for generic query:', userPreferences.sizes.top);
+      } else if (userPreferences.sizes.bottom) {
+        parts.push(`size ${userPreferences.sizes.bottom}`);
+        console.log('[ENHANCE] Added bottom size for generic query:', userPreferences.sizes.bottom);
+      } else {
+        console.log('[ENHANCE] No size added - no sizes available');
+      }
+    }
+  } else {
+    console.log('[ENHANCE] No sizes available in preferences');
+  }
+  
+  const enhanced = parts.join(' ');
+  console.log('[ENHANCE] Final enhanced query:', enhanced);
+  return enhanced;
+}
 
 export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
-    const q = searchParams.get('q') || '';
+    let q = searchParams.get('q') || '';
     const count = parseInt(searchParams.get('count') || '15');
-    console.log('[SEARCH] q:', q, 'count:', count);
+    
+    // Get user preferences if authenticated
+    let userPreferences: { gender?: string; sizes?: { top?: string; bottom?: string; shoes?: string } } | undefined;
+    try {
+      const { userId } = await auth();
+      if (userId) {
+        const user = await db.query.users.findFirst({
+          where: eq(users.clerkId, userId),
+        });
+        if (user?.preferences) {
+          // Ensure we extract the preferences correctly from JSONB
+          const prefs = user.preferences as any;
+          userPreferences = {
+            gender: prefs?.gender,
+            sizes: prefs?.sizes ? {
+              top: prefs.sizes?.top,
+              bottom: prefs.sizes?.bottom,
+              shoes: prefs.sizes?.shoes,
+            } : undefined,
+          };
+          console.log('[SEARCH] Extracted preferences:', JSON.stringify(userPreferences, null, 2));
+        } else {
+          console.log('[SEARCH] User found but no preferences');
+        }
+      } else {
+        console.log('[SEARCH] No userId from auth');
+      }
+    } catch (error) {
+      // Silently fail - don't break search if auth fails
+      console.warn('[SEARCH] Could not fetch user preferences:', error);
+    }
+    
+    // Log user preferences for debugging
+    console.log('[SEARCH] User preferences:', JSON.stringify(userPreferences, null, 2));
+    console.log('[SEARCH] Original query:', q);
+    
+    // Enhance query with user preferences
+    const originalQuery = q;
+    q = enhanceQueryWithPreferences(q, userPreferences);
+    
+    console.log('[SEARCH] Enhanced query:', q, '(original:', originalQuery + ')', 'count:', count, 'userPrefs:', userPreferences ? 'yes' : 'no');
 
     const apiKey = process.env.SERPAPI_API_KEY;
     console.log('[SEARCH] SERPAPI_API_KEY check:');
@@ -19,12 +132,12 @@ export async function GET(req: NextRequest) {
     if (!apiKey) {
       console.warn('[SEARCH] SERPAPI_API_KEY not configured, falling back to internal products');
       // Fallback to internal products
-      return await getInternalProducts(q, count);
+      return await getInternalProducts(q, count, userPreferences);
     }
 
     const url = new URL('https://serpapi.com/search.json');
     url.searchParams.set('engine', 'google_shopping_light');
-    url.searchParams.set('q', q);
+    url.searchParams.set('q', q); // Already enhanced with user preferences
     url.searchParams.set('api_key', apiKey);
 
     const resp = await fetch(url.toString());
@@ -162,14 +275,32 @@ export async function GET(req: NextRequest) {
     }
     // Fallback to internal products on error
     const searchParams = req.nextUrl.searchParams;
-    const q = searchParams.get('q') || '';
+    let q = searchParams.get('q') || '';
     const count = parseInt(searchParams.get('count') || '15');
+    
+    // Try to get user preferences for fallback
+    let userPreferences: { gender?: string; sizes?: { top?: string; bottom?: string; shoes?: string } } | undefined;
+    try {
+      const { userId } = await auth();
+      if (userId) {
+        const user = await db.query.users.findFirst({
+          where: eq(users.clerkId, userId),
+        });
+        if (user?.preferences) {
+          userPreferences = user.preferences;
+        }
+      }
+    } catch (error) {
+      // Silently fail
+    }
+    
+    q = enhanceQueryWithPreferences(q, userPreferences);
     console.log('[SEARCH] Falling back to internal products due to error');
-    return await getInternalProducts(q, count);
+    return await getInternalProducts(q, count, userPreferences);
   }
 }
 
-async function getInternalProducts(query: string, count: number) {
+async function getInternalProducts(query: string, count: number, userPreferences?: { gender?: string; sizes?: { top?: string; bottom?: string; shoes?: string } }) {
   try {
     console.log('[SEARCH] Fetching internal products for query:', query);
     
@@ -177,6 +308,7 @@ async function getInternalProducts(query: string, count: number) {
     
     if (query && query.trim().length > 0) {
       // Search by name, brand, or category
+      // Note: query already enhanced with user preferences
       const searchTerm = `%${query.trim()}%`;
       productResults = await db
         .select()

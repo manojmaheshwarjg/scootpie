@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
+import { db } from '@/lib/db';
+import { users } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 import { generateVirtualTryOn } from '@/services/tryon';
 
 export async function POST(req: NextRequest) {
@@ -8,6 +11,27 @@ export async function POST(req: NextRequest) {
     
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Check if user has gender preference (required for virtual try-on)
+    const user = await db.query.users.findFirst({
+      where: eq(users.clerkId, userId),
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const userGender = (user.preferences as any)?.gender;
+    if (!userGender || userGender === 'prefer-not-to-say') {
+      return NextResponse.json(
+        { 
+          error: 'Gender preference is required for virtual try-on',
+          code: 'GENDER_REQUIRED',
+          redirectTo: '/profile'
+        },
+        { status: 400 }
+      );
     }
 
     const body = await req.json();

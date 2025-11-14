@@ -57,6 +57,19 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    // Check if user has gender preference (required for virtual try-on)
+    const userPreferences = user.preferences;
+    const userGender = (userPreferences as any)?.gender;
+    if (!userGender || userGender === 'prefer-not-to-say') {
+      return NextResponse.json({
+        error: 'Gender preference is required for virtual try-on. Please update your profile.',
+        code: 'GENDER_REQUIRED',
+        redirectTo: '/profile',
+      }, { status: 400 });
+    }
+
+    // Extract user preferences for query enhancement
+
     // Get or create conversation
     let conversation;
     if (conversationId) {
@@ -178,16 +191,59 @@ export async function POST(req: NextRequest) {
       console.log('[CHAT]   - Value length:', serpKey ? serpKey.length : 0);
       console.log('[CHAT]   - Value preview:', serpKey ? `${serpKey.substring(0, 10)}...` : 'undefined');
 
+      // Helper function to enhance query with user preferences
+      const enhanceQueryWithPreferences = (query: string): string => {
+        if (!query.trim() || !userPreferences) return query;
+        
+        const parts: string[] = [query];
+        
+        // Add gender if available
+        if (userPreferences.gender && userPreferences.gender !== 'prefer-not-to-say') {
+          const genderMap: Record<string, string> = {
+            'men': 'men',
+            'women': 'women',
+            'unisex': 'unisex',
+            'non-binary': 'unisex',
+          };
+          const genderTerm = genderMap[userPreferences.gender];
+          if (genderTerm && !query.toLowerCase().includes(genderTerm.toLowerCase())) {
+            parts.push(genderTerm);
+          }
+        }
+        
+        // Add size context if available
+        if (userPreferences.sizes) {
+          const queryLower = query.toLowerCase();
+          const isTopQuery = ['shirt', 'top', 't-shirt', 'blouse', 'sweater', 'hoodie', 'jacket', 'coat', 'crop top'].some(term => queryLower.includes(term));
+          const isBottomQuery = ['pants', 'jeans', 'trousers', 'shorts', 'skirt'].some(term => queryLower.includes(term));
+          const isShoeQuery = ['shoe', 'sneaker', 'boot', 'sandal', 'heel', 'sneakers'].some(term => queryLower.includes(term));
+          
+          if (isTopQuery && userPreferences.sizes.top) {
+            parts.push(`size ${userPreferences.sizes.top}`);
+          } else if (isBottomQuery && userPreferences.sizes.bottom) {
+            parts.push(`size ${userPreferences.sizes.bottom}`);
+          } else if (isShoeQuery && userPreferences.sizes.shoes) {
+            parts.push(`size ${userPreferences.sizes.shoes}`);
+          }
+        }
+        
+        return parts.join(' ');
+      };
+
       // Helper: run a single search query string through /api/search/products
       const runSearch = async (q: string): Promise<any[]> => {
+        // Enhance query with user preferences
+        const enhancedQuery = enhanceQueryWithPreferences(q);
+        console.log('[CHAT] Original query:', q, 'Enhanced:', enhancedQuery);
+        
         let products: any[] = [];
         if (serpKey) {
           // Call SerpAPI directly from server side
           try {
-            console.log('[CHAT] Searching SerpAPI directly with q="' + q + '"');
+            console.log('[CHAT] Searching SerpAPI directly with q="' + enhancedQuery + '"');
             const serpUrl = new URL('https://serpapi.com/search.json');
             serpUrl.searchParams.set('engine', 'google_shopping_light');
-            serpUrl.searchParams.set('q', q);
+            serpUrl.searchParams.set('q', enhancedQuery);
             serpUrl.searchParams.set('api_key', serpKey);
             
             const serpRes = await fetch(serpUrl.toString());
@@ -247,7 +303,8 @@ export async function POST(req: NextRequest) {
         if (products.length === 0) {
           console.log('[CHAT] Falling back to internal products');
           try {
-            const searchTerm = `%${q.trim()}%`;
+            // Use enhanced query for internal search too
+            const searchTerm = `%${enhancedQuery.trim()}%`;
             const internalProducts = await db
               .select()
               .from(products)
@@ -304,9 +361,9 @@ export async function POST(req: NextRequest) {
           // category only
           candidates.push([parts.category].filter(Boolean).join(' '));
 
-          for (const q of candidates.filter(Boolean)) {
+          for (const candidateQuery of candidates.filter(Boolean)) {
             if (products.length > 0) break;
-            products = await runSearch(q);
+            products = await runSearch(candidateQuery);
           }
         }
 
@@ -460,7 +517,11 @@ export async function POST(req: NextRequest) {
         responseText = `Here's your look with: ${itemsList}. Add more items to complete your outfit (e.g., 'black jeans', 'white sneakers')!`;
       }
     } else {
-      responseText = `I couldn't find good matches for "${message}". Try something like 'red crop top from Zara', 'black jeans from H&M', or include specific brands and colors.`;
+      // Include user preferences context in error message if available
+      const prefContext = userPreferences?.gender && userPreferences.gender !== 'prefer-not-to-say' 
+        ? ` for ${userPreferences.gender === 'men' ? 'men' : userPreferences.gender === 'women' ? 'women' : 'you'}`
+        : '';
+      responseText = `I couldn't find good matches${prefContext} for "${message}". Try something like 'red crop top from Zara', 'black jeans from H&M', or include specific brands and colors.`;
     }
 
     // Save assistant message

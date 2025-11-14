@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, RotateCcw, ExternalLink, Trash2 } from 'lucide-react';
+import { Send, Bot, User, RotateCcw, ExternalLink, Trash2, ChevronDown, MessageSquare, Clock } from 'lucide-react';
 import { Navigation } from '@/components/Navigation';
 import Image from 'next/image';
 
@@ -40,7 +40,10 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const desktopDropdownRef = useRef<HTMLDivElement>(null);
+  const mobileDropdownRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,6 +52,24 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const isOutsideDesktop = !desktopDropdownRef.current?.contains(target);
+      const isOutsideMobile = !mobileDropdownRef.current?.contains(target);
+      if (isOutsideDesktop && isOutsideMobile) {
+        setIsDropdownOpen(false);
+      }
+    };
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDropdownOpen]);
 
   // Initial load: list conversations and load latest one
   useEffect(() => {
@@ -96,6 +117,7 @@ if (Array.isArray(data.messages) && data.messages.length > 0) {
       if (res.ok) {
         const data = await res.json();
         setConversationId(id);
+        setIsDropdownOpen(false);
 if (Array.isArray(data.messages)) {
           setMessages(
             data.messages.map((m: any) => ({
@@ -114,6 +136,7 @@ if (Array.isArray(data.messages)) {
 
   const handleNewChat = () => {
     setConversationId(null);
+    setIsDropdownOpen(false);
     setMessages([
       {
         id: Date.now().toString(),
@@ -233,6 +256,30 @@ if (Array.isArray(data.messages)) {
   };
 
   const formatTs = (ts: string) => new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  
+  const formatTimeAgo = (ts: string) => {
+    const date = new Date(ts);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+  
+  const getCurrentConversationLabel = () => {
+    if (!conversationId) return 'New Chat';
+    const conv = conversations.find(c => c.id === conversationId);
+    if (conv) {
+      return formatTimeAgo(conv.lastMessageAt || conv.createdAt);
+    }
+    return 'Current Chat';
+  };
 
   return (
     <>
@@ -253,7 +300,7 @@ if (Array.isArray(data.messages)) {
       <div className="fixed bottom-20 left-10 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl animate-pulse pointer-events-none z-0 lg:left-[calc(224px+2.5rem)]" style={{animationDelay: '1s'}}></div>
       
       {/* Desktop Header */}
-      <div className="hidden lg:flex items-center justify-between h-14 px-6 border-b border-gray-200 bg-white relative z-20">
+      <div className={`hidden lg:flex items-center justify-between h-14 px-6 border-b border-gray-200 bg-white relative ${isDropdownOpen ? 'z-[10000]' : 'z-20'}`}>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1A1A1A]">
             <Bot className="h-5 w-5 text-white" />
@@ -263,38 +310,112 @@ if (Array.isArray(data.messages)) {
             <p className="text-sm text-[#5A5A5A] font-light">Your personal fashion assistant</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={conversationId || ''}
-            onChange={(e) => e.target.value ? loadConversation(e.target.value) : undefined}
-            className="px-3 py-2 text-sm border border-[#E8E8E6] rounded-full bg-white text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/10 focus:border-[#1A1A1A] transition-all shadow-sm"
-          >
-            <option value="">Select chat…</option>
-            {conversations.map((c) => (
-              <option key={c.id} value={c.id}>Chat • {formatTs(c.lastMessageAt || c.createdAt)}</option>
-            ))}
-          </select>
-          {conversationId && (
-            <button
-              onClick={handleDeleteConversation}
-              className="flex items-center gap-2 px-3 py-2 rounded-full border border-[#E8E8E6] bg-white hover:bg-[#FAFAF8] transition-all text-sm text-[#B00020] shadow-sm"
-              title="Delete current chat"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          )}
+        <div className="flex items-center gap-3 relative" ref={desktopDropdownRef}>
           <button
-            onClick={handleNewChat}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-[#E8E8E6] bg-white hover:bg-[#FAFAF8] transition-all text-sm font-medium text-[#1A1A1A] shadow-sm"
+            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+            className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#8B5CF6]/10 to-[#7C3AED]/10 hover:from-[#8B5CF6]/15 hover:to-[#7C3AED]/15 border border-[#8B5CF6]/20 transition-all text-sm font-medium text-[#8B5CF6] group"
           >
-            <RotateCcw className="h-4 w-4" />
-            New Chat
+            <MessageSquare className="h-4 w-4" />
+            <span className="font-semibold">{getCurrentConversationLabel()}</span>
+            <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
+          
+          {isDropdownOpen && (
+            <>
+              {/* Backdrop */}
+              <div 
+                className="fixed inset-0 z-[9998] bg-black/5"
+                onClick={() => setIsDropdownOpen(false)}
+              />
+              {/* Dropdown */}
+              <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-2xl border border-gray-200/80 shadow-2xl z-[9999] overflow-hidden backdrop-blur-xl transition-all duration-200">
+                <div className="p-3">
+                <button
+                  onClick={handleNewChat}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-gradient-to-r hover:from-[#8B5CF6]/8 hover:to-[#7C3AED]/8 transition-all text-left group border border-transparent hover:border-[#8B5CF6]/20"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#8B5CF6] to-[#7C3AED] shadow-sm group-hover:shadow-md transition-all">
+                    <RotateCcw className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-bold text-[#1A1A1A] text-sm">New Chat</div>
+                    <div className="text-xs text-[#8A8A8A] font-normal mt-0.5">Start a fresh conversation</div>
+                  </div>
+                </button>
+                
+                {conversations.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="px-3 py-2 mb-1">
+                      <div className="text-[10px] font-bold text-[#8A8A8A] uppercase tracking-wider">Recent</div>
+                    </div>
+                    <div className="max-h-[320px] overflow-y-auto space-y-1">
+                      {conversations.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => loadConversation(c.id)}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left group ${
+                            conversationId === c.id 
+                              ? 'bg-gradient-to-r from-[#8B5CF6]/12 to-[#7C3AED]/12 border border-[#8B5CF6]/30 shadow-sm' 
+                              : 'hover:bg-gray-50/80 border border-transparent hover:border-gray-200/50'
+                          }`}
+                        >
+                          <div className={`flex h-10 w-10 items-center justify-center rounded-lg transition-all ${
+                            conversationId === c.id
+                              ? 'bg-gradient-to-br from-[#8B5CF6] to-[#7C3AED] shadow-sm'
+                              : 'bg-gray-100 group-hover:bg-[#8B5CF6]/10'
+                          }`}>
+                            <MessageSquare className={`h-[18px] w-[18px] ${
+                              conversationId === c.id ? 'text-white' : 'text-gray-500'
+                            }`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className={`font-semibold text-sm truncate ${
+                              conversationId === c.id ? 'text-[#8B5CF6]' : 'text-[#1A1A1A]'
+                            }`}>
+                              Conversation
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <Clock className="h-3 w-3 text-[#8A8A8A]" />
+                              <span className="text-xs text-[#8A8A8A] font-normal">{formatTimeAgo(c.lastMessageAt || c.createdAt)}</span>
+                            </div>
+                          </div>
+                          {conversationId === c.id && (
+                            <div className="h-2 w-2 rounded-full bg-[#8B5CF6] shadow-sm"></div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {conversationId && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <button
+                      onClick={async () => {
+                        await handleDeleteConversation();
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50/80 transition-all text-left group border border-transparent hover:border-red-200/50"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 group-hover:bg-red-100 transition-all">
+                        <Trash2 className="h-[18px] w-[18px] text-red-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-sm text-red-600">Delete Chat</div>
+                        <div className="text-xs text-red-400 font-normal mt-0.5">Permanently remove</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Mobile Header */}
-      <div className="lg:hidden flex items-center justify-between px-4 py-4 border-b border-gray-200/50 bg-white/80 backdrop-blur-xl relative z-20">
+      <div className={`lg:hidden flex items-center justify-between px-4 py-4 border-b border-gray-200/50 bg-white/80 backdrop-blur-xl relative ${isDropdownOpen ? 'z-[10000]' : 'z-20'}`}>
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1A1A1A]">
             <Bot className="h-4 w-4 text-white" />
@@ -304,28 +425,111 @@ if (Array.isArray(data.messages)) {
             <p className="text-xs text-[#5A5A5A] font-light">Fashion assistant</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <select
-            value={conversationId || ''}
-            onChange={(e) => e.target.value ? loadConversation(e.target.value) : undefined}
-            className="px-2 py-1.5 text-xs border border-[#E8E8E6] rounded-full bg-white text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/10 focus:border-[#1A1A1A] transition-all shadow-sm"
-          >
-            <option value="">Chats…</option>
-            {conversations.map((c) => (
-              <option key={c.id} value={c.id}>Chat • {new Date(c.lastMessageAt || c.createdAt).toLocaleDateString()}</option>
-            ))}
-          </select>
+        <div className="flex items-center gap-2 relative" ref={mobileDropdownRef}>
           <button
-            onClick={handleNewChat}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#E8E8E6] bg-white hover:bg-[#FAFAF8] transition-all text-xs font-medium text-[#1A1A1A] shadow-sm"
+            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#8B5CF6]/10 to-[#7C3AED]/10 hover:from-[#8B5CF6]/15 hover:to-[#7C3AED]/15 border border-[#8B5CF6]/20 transition-all text-xs font-semibold text-[#8B5CF6]"
           >
-            <RotateCcw className="h-3.5 w-3.5" />
-            New
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span className="max-w-[70px] truncate">{getCurrentConversationLabel()}</span>
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
+          
+          {isDropdownOpen && (
+            <>
+              {/* Backdrop */}
+              <div 
+                className="fixed inset-0 z-[9998] bg-black/5"
+                onClick={() => setIsDropdownOpen(false)}
+              />
+              {/* Dropdown */}
+              <div className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] max-w-[320px] bg-white rounded-2xl border border-gray-200/80 shadow-2xl z-[9999] overflow-hidden backdrop-blur-xl transition-all duration-200">
+                <div className="p-3">
+                <button
+                  onClick={handleNewChat}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-gradient-to-r hover:from-[#8B5CF6]/8 hover:to-[#7C3AED]/8 transition-all text-left group border border-transparent hover:border-[#8B5CF6]/20"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#8B5CF6] to-[#7C3AED] shadow-sm group-hover:shadow-md transition-all">
+                    <RotateCcw className="h-[18px] w-[18px] text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-bold text-[#1A1A1A] text-sm">New Chat</div>
+                    <div className="text-xs text-[#8A8A8A] font-normal mt-0.5">Start a fresh conversation</div>
+                  </div>
+                </button>
+                
+                {conversations.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="px-3 py-2 mb-1">
+                      <div className="text-[10px] font-bold text-[#8A8A8A] uppercase tracking-wider">Recent</div>
+                    </div>
+                    <div className="max-h-[280px] overflow-y-auto space-y-1">
+                      {conversations.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => loadConversation(c.id)}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left group ${
+                            conversationId === c.id 
+                              ? 'bg-gradient-to-r from-[#8B5CF6]/12 to-[#7C3AED]/12 border border-[#8B5CF6]/30 shadow-sm' 
+                              : 'hover:bg-gray-50/80 border border-transparent hover:border-gray-200/50'
+                          }`}
+                        >
+                          <div className={`flex h-10 w-10 items-center justify-center rounded-lg transition-all ${
+                            conversationId === c.id
+                              ? 'bg-gradient-to-br from-[#8B5CF6] to-[#7C3AED] shadow-sm'
+                              : 'bg-gray-100 group-hover:bg-[#8B5CF6]/10'
+                          }`}>
+                            <MessageSquare className={`h-4 w-4 ${
+                              conversationId === c.id ? 'text-white' : 'text-gray-500'
+                            }`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className={`font-semibold text-sm truncate ${
+                              conversationId === c.id ? 'text-[#8B5CF6]' : 'text-[#1A1A1A]'
+                            }`}>
+                              Conversation
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <Clock className="h-3 w-3 text-[#8A8A8A]" />
+                              <span className="text-xs text-[#8A8A8A] font-normal">{formatTimeAgo(c.lastMessageAt || c.createdAt)}</span>
+                            </div>
+                          </div>
+                          {conversationId === c.id && (
+                            <div className="h-2 w-2 rounded-full bg-[#8B5CF6] shadow-sm"></div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {conversationId && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <button
+                      onClick={async () => {
+                        await handleDeleteConversation();
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50/80 transition-all text-left group border border-transparent hover:border-red-200/50"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 group-hover:bg-red-100 transition-all">
+                        <Trash2 className="h-4 w-4 text-red-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-sm text-red-600">Delete Chat</div>
+                        <div className="text-xs text-red-400 font-normal mt-0.5">Permanently remove</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4 lg:space-y-6 relative z-20">
+      <div className={`flex-1 overflow-y-auto p-4 lg:p-6 space-y-4 lg:space-y-6 relative z-20 ${isDropdownOpen ? 'pointer-events-none' : ''}`}>
         {messages.map((message) => (
           <div
             key={message.id}

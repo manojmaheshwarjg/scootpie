@@ -35,6 +35,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+    // Check if user has gender preference (required for virtual try-on)
+    const userGender = (user.preferences as any)?.gender;
+    if (!userGender || userGender === 'prefer-not-to-say') {
+      return NextResponse.json(
+        { 
+          error: 'Gender preference is required for virtual try-on',
+          code: 'GENDER_REQUIRED',
+          redirectTo: '/profile'
+        },
+        { status: 400 }
+      );
+    }
+
     // Get photo (use provided photoId or primary photo)
     const userPhoto = photoId 
       ? user.photos.find(p => p.id === photoId)

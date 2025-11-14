@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { SwipeCard } from '@/components/swipe/SwipeCard';
 import { Button } from '@/components/ui/button';
 import { Product } from '@/types';
 import { generateSessionId } from '@/lib/utils';
 import { useStore } from '@/store/useStore';
-import { Heart, X, Star, RotateCcw, Loader2 } from 'lucide-react';
+import { Heart, X, RotateCcw, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Navigation } from '@/components/Navigation';
 
@@ -17,6 +18,7 @@ interface TryOnImage {
 }
 
 export default function SwipePage() {
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -86,10 +88,19 @@ export default function SwipePage() {
             productDescription: product.description,
           }),
         });
+        
         if (response.ok) {
           const data = await response.json();
           if (data.success && (data.imageUrl || data.imageData)) {
             imageUrl = data.imageUrl || `data:image/png;base64,${data.imageData}`;
+          }
+        } else {
+          // Check for gender requirement error
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.code === 'GENDER_REQUIRED') {
+            alert('Please set your gender preference in your profile to use virtual try-on.');
+            window.location.href = errorData.redirectTo || '/profile';
+            return;
           }
         }
       } else {
@@ -101,6 +112,7 @@ export default function SwipePage() {
           body: JSON.stringify({ productId }),
         });
         console.log('[SWIPE] Try-on API response status:', response.status);
+        
         if (response.ok) {
           const data = await response.json();
           console.log('[SWIPE] Try-on API response data:', data);
@@ -108,8 +120,16 @@ export default function SwipePage() {
             imageUrl = data.imageUrl;
           }
         } else {
+          // Check for gender requirement error
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.code === 'GENDER_REQUIRED') {
+            alert('Please set your gender preference in your profile to use virtual try-on.');
+            window.location.href = errorData.redirectTo || '/profile';
+            return;
+        } else {
           const errorText = await response.text();
           console.error('[SWIPE] Try-on API error:', response.status, errorText);
+          }
         }
       }
 
@@ -144,8 +164,42 @@ export default function SwipePage() {
     const newSessionId = generateSessionId();
     setSessionId(newSessionId);
     fetchUserPhoto();
-    loadProducts();
-  }, [setSessionId, fetchUserPhoto]);
+    
+    // Get search query from URL params, sessionStorage (from landing page), or localStorage (persisted)
+    const urlQuery = searchParams.get('q');
+    const landingQuery = sessionStorage.getItem('landingSearchQuery');
+    const persistedQuery = localStorage.getItem('lastSearchQuery');
+    
+    console.log('[SWIPE] Checking for search query:', { urlQuery, landingQuery, persistedQuery });
+    
+    if (urlQuery) {
+      // URL param takes priority
+      console.log('[SWIPE] Using URL query:', urlQuery);
+      setQuery(urlQuery);
+      loadProducts(urlQuery);
+      // Save to localStorage for persistence
+      localStorage.setItem('lastSearchQuery', urlQuery);
+    } else if (landingQuery) {
+      // Use landing page query if available
+      console.log('[SWIPE] Using landing page query:', landingQuery);
+      setQuery(landingQuery);
+      loadProducts(landingQuery);
+      // Save to localStorage for persistence
+      localStorage.setItem('lastSearchQuery', landingQuery);
+      // Clear sessionStorage after using it
+      sessionStorage.removeItem('landingSearchQuery');
+      sessionStorage.removeItem('landingStyle'); // Also clear style if we're not using it
+    } else if (persistedQuery) {
+      // Use persisted query from previous session
+      console.log('[SWIPE] Using persisted query:', persistedQuery);
+      setQuery(persistedQuery);
+      loadProducts(persistedQuery);
+    } else {
+      // Default search
+      console.log('[SWIPE] Using default search');
+      loadProducts();
+    }
+  }, [setSessionId, fetchUserPhoto, searchParams]);
 
   // DISABLED: Auto try-on generation to avoid API quota exhaustion
   // Users can manually generate try-ons by tapping a button on the card instead
@@ -176,6 +230,11 @@ export default function SwipePage() {
         setCurrentIndex(0);
         setTryOnImages(new Map());
         setGeneratingTryOns(new Set());
+        
+        // Persist the search query to localStorage if it's a user search (not default)
+        if (search && search.trim().length > 0) {
+          localStorage.setItem('lastSearchQuery', search.trim());
+        }
       }
     } catch (error) {
       console.error('Failed to load products:', error);
@@ -378,19 +437,13 @@ export default function SwipePage() {
               <span className="relative z-10">Search</span>
             </button>
           </form>
-          <div className="bg-white border border-[#E8E8E6] px-5 py-2.5 text-sm font-medium text-[#1A1A1A] rounded-full shadow-sm">
-            {remainingCards} remaining
-          </div>
         </div>
       </div>
 
       {/* Mobile Header */}
       <div className="lg:hidden px-4 py-4 space-y-3 border-b border-gray-200/50 bg-white/80 backdrop-blur-xl relative z-10 shrink-0">
-        <div className="flex items-center justify-between">
+        <div>
           <h1 className="text-2xl font-serif font-bold text-[#1A1A1A] tracking-[-0.04em]">Discover</h1>
-          <div className="bg-white border border-[#E8E8E6] px-3 py-2 text-xs font-medium text-[#1A1A1A] rounded-full shadow-sm">
-            {remainingCards} left
-          </div>
         </div>
         <form
           onSubmit={(e) => {
@@ -479,14 +532,6 @@ export default function SwipePage() {
           className="h-14 w-14 rounded-full bg-white border-2 border-[#E8E8E6] shadow-sm transition-all hover:shadow-md hover:border-[#1A1A1A] disabled:opacity-50 flex items-center justify-center group"
         >
           <X className="h-6 w-6 text-[#8A8A8A] group-hover:text-[#1A1A1A] transition-colors" />
-        </button>
-        
-        <button
-          onClick={() => handleManualSwipe('up')}
-          disabled={!currentProduct || isGeneratingTryOn}
-          className="h-16 w-16 bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] border-2 border-white shadow-lg transition-all hover:scale-105 disabled:opacity-50 flex items-center justify-center group rounded-full"
-        >
-          <Star className="h-7 w-7 text-white fill-current" />
         </button>
         
         <button
