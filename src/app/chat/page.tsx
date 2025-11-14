@@ -41,6 +41,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const desktopDropdownRef = useRef<HTMLDivElement>(null);
   const mobileDropdownRef = useRef<HTMLDivElement>(null);
@@ -70,6 +71,11 @@ export default function ChatPage() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isDropdownOpen]);
+
+  // Set mounted flag after component mounts on client
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Initial load: list conversations and load latest one
   useEffect(() => {
@@ -273,6 +279,7 @@ if (Array.isArray(data.messages)) {
   };
   
   const getCurrentConversationLabel = () => {
+    if (!isMounted) return 'New Chat'; // Return consistent value during SSR
     if (!conversationId) return 'New Chat';
     const conv = conversations.find(c => c.id === conversationId);
     if (conv) {
@@ -302,22 +309,21 @@ if (Array.isArray(data.messages)) {
       {/* Desktop Header */}
       <div className={`hidden lg:flex items-center justify-between h-14 px-6 border-b border-gray-200 bg-white relative ${isDropdownOpen ? 'z-[10000]' : 'z-20'}`}>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1A1A1A]">
-            <Bot className="h-5 w-5 text-white" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1A1A1A]">
+            <Bot className="h-4 w-4 text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-serif font-bold text-[#1A1A1A] mb-1 tracking-[-0.04em]">AI Stylist</h1>
-            <p className="text-sm text-[#5A5A5A] font-light">Your personal fashion assistant</p>
+            <h1 className="text-lg font-semibold text-[#1A1A1A]">AI Stylist</h1>
           </div>
         </div>
-        <div className="flex items-center gap-3 relative" ref={desktopDropdownRef}>
+        <div className="flex items-center gap-2 relative" ref={desktopDropdownRef}>
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#8B5CF6]/10 to-[#7C3AED]/10 hover:from-[#8B5CF6]/15 hover:to-[#7C3AED]/15 border border-[#8B5CF6]/20 transition-all text-sm font-medium text-[#8B5CF6] group"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-all text-sm font-medium text-[#1A1A1A]"
+            suppressHydrationWarning
           >
-            <MessageSquare className="h-4 w-4" />
-            <span className="font-semibold">{getCurrentConversationLabel()}</span>
-            <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+            <span suppressHydrationWarning>{getCurrentConversationLabel()}</span>
+            <ChevronDown className={`h-3.5 w-3.5 text-gray-500 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
           
           {isDropdownOpen && (
@@ -415,24 +421,21 @@ if (Array.isArray(data.messages)) {
       </div>
 
       {/* Mobile Header */}
-      <div className={`lg:hidden flex items-center justify-between px-4 py-4 border-b border-gray-200/50 bg-white/80 backdrop-blur-xl relative ${isDropdownOpen ? 'z-[10000]' : 'z-20'}`}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1A1A1A]">
+      <div className={`lg:hidden flex items-center justify-between px-4 py-3 border-b border-gray-200/50 bg-white/80 backdrop-blur-xl relative ${isDropdownOpen ? 'z-[10000]' : 'z-20'}`}>
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1A1A1A]">
             <Bot className="h-4 w-4 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-serif font-bold text-[#1A1A1A] tracking-[-0.04em]">AI Stylist</h1>
-            <p className="text-xs text-[#5A5A5A] font-light">Fashion assistant</p>
-          </div>
+          <h1 className="text-lg font-semibold text-[#1A1A1A]">AI Stylist</h1>
         </div>
         <div className="flex items-center gap-2 relative" ref={mobileDropdownRef}>
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#8B5CF6]/10 to-[#7C3AED]/10 hover:from-[#8B5CF6]/15 hover:to-[#7C3AED]/15 border border-[#8B5CF6]/20 transition-all text-xs font-semibold text-[#8B5CF6]"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-all text-xs font-medium text-[#1A1A1A]"
+            suppressHydrationWarning
           >
-            <MessageSquare className="h-3.5 w-3.5" />
-            <span className="max-w-[70px] truncate">{getCurrentConversationLabel()}</span>
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+            <span className="max-w-[80px] truncate" suppressHydrationWarning>{getCurrentConversationLabel()}</span>
+            <ChevronDown className={`h-3 w-3 text-gray-500 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
           
           {isDropdownOpen && (

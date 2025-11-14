@@ -54,7 +54,7 @@ export function SwipeCard({ product, tryOnImageUrl, onSwipe, onTap, style, isLoa
     >
       <div
         onClick={onTap}
-        className="relative w-full h-full bg-white shadow-xl overflow-hidden rounded-xl border border-gray-200 hover:border-[#8B5CF6]/30 transition-all duration-300"
+        className="relative w-full h-full bg-white overflow-hidden rounded-xl border border-gray-200 hover:border-[#8B5CF6]/30 transition-all duration-300"
       >
         <div className="relative flex h-full w-full flex-col">
           {/* Image area (does not get covered by info card) */}

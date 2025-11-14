@@ -291,8 +291,6 @@ export async function PUT(req: NextRequest) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    const modelVersion = 'gemini-2.5-flash-image';
-
     for (const product of productsToGenerate) {
       try {
         console.log(`Batch generating try-on for product ${product.name} (${product.id})`);

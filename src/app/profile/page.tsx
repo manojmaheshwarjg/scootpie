@@ -402,9 +402,9 @@ export default function ProfilePage() {
 
   return (
     <>
-    <div className="min-h-screen bg-gradient-to-br from-white via-[#8B5CF6]/5 to-white p-4 pb-24 lg:pb-8 lg:pl-56 relative">
+    <div className="flex flex-col min-h-screen w-full bg-gradient-to-br from-white via-[#8B5CF6]/5 to-white pb-24 lg:pb-0 lg:pl-56 relative">
       {/* Noise Background - Fixed */}
-      <div className="fixed inset-0 pointer-events-none z-0 lg:left-56">
+      <div className="hidden lg:block fixed inset-0 pointer-events-none z-0 lg:left-56">
         <svg className="w-full h-full opacity-65" xmlns="http://www.w3.org/2000/svg">
           <filter id="noise-profile">
             <feTurbulence type="fractalNoise" baseFrequency="0.80" numOctaves="4" stitchTiles="stitch"/>
@@ -418,25 +418,22 @@ export default function ProfilePage() {
       <div className="fixed top-20 right-10 w-72 h-72 bg-[#8B5CF6]/10 rounded-full blur-3xl animate-pulse pointer-events-none z-0 lg:left-[calc(224px+10rem)]"></div>
       <div className="fixed bottom-20 left-10 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl animate-pulse pointer-events-none z-0 lg:left-[calc(224px+2.5rem)]" style={{animationDelay: '1s'}}></div>
       
-      <div className="relative z-10">
-      <div className="lg:px-6 lg:py-6 max-w-6xl space-y-4">
-        {/* Desktop Header */}
-        <div className="hidden lg:flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-serif font-bold text-[#1A1A1A] mb-2 tracking-[-0.04em]">Profile & Settings</h1>
-            <p className="text-sm text-[#5A5A5A] font-light">Manage your account and preferences</p>
-          </div>
-          <UserButton afterSignOutUrl="/" />
+      {/* Desktop Header */}
+      <div className="hidden lg:flex items-center justify-between h-14 px-6 border-b border-gray-200 bg-white/95 backdrop-blur-sm sticky top-0 z-30 shrink-0">
+        <div>
+          <h1 className="text-lg font-semibold">Profile & Settings</h1>
         </div>
+        <UserButton afterSignOutUrl="/" />
+      </div>
 
-        {/* Mobile Header */}
-        <div className="lg:hidden flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-serif font-bold text-[#1A1A1A] mb-1 tracking-[-0.04em]">Profile</h1>
-            <p className="text-xs text-[#5A5A5A] font-light">Settings</p>
-          </div>
-          <UserButton afterSignOutUrl="/" />
-        </div>
+      {/* Mobile Header */}
+      <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-gray-200/50 bg-white/80 backdrop-blur-xl sticky top-0 z-30 shrink-0">
+        <h1 className="text-lg font-semibold text-[#1A1A1A]">Profile</h1>
+        <UserButton afterSignOutUrl="/" />
+      </div>
+
+      <div className="flex-1 relative z-10 overflow-y-auto">
+      <div className="lg:px-6 lg:py-6 p-4 space-y-4">
 
         <div className="bg-white rounded-xl shadow-md border border-[#E8E8E6] p-4">
           <div className="flex items-center justify-between mb-4">

@@ -196,7 +196,7 @@ export async function GET(req: NextRequest) {
     async function fetchOgImage(pageUrl?: string): Promise<string | null> {
       if (!pageUrl) return null;
       try {
-        const res = await fetch(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 VesakiBot', 'Accept': 'text/html' } });
+        const res = await fetch(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 scootpieBot', 'Accept': 'text/html' } });
         if (!res.ok) return null;
         const html = await res.text();
         const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i) || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["'][^>]*>/i);

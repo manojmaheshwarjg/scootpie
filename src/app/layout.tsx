@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { DM_Serif_Display, Inter } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import './globals.css';
 import { Providers } from './providers';
 
@@ -18,7 +19,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Vesaki - AI Personal Shopping Assistant',
+  title: 'Scootpie - AI Personal Shopping Assistant',
   description: 'Discover and virtually try on fashion with AI-powered personal styling',
 };
 
@@ -32,6 +33,7 @@ export default function RootLayout({
       <html lang="en">
         <body className={`${dmSerif.variable} ${inter.variable} font-sans antialiased`} suppressHydrationWarning>
           <Providers>{children}</Providers>
+          <SpeedInsights />
         </body>
       </html>
     </ClerkProvider>

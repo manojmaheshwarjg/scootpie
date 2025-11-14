@@ -376,7 +376,7 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-gradient-to-b from-indigo-100 via-purple-50 to-pink-50 flex items-center justify-center p-6">
       <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl p-8">
         <div className="mb-6">
-          <h1 className="text-5xl font-serif font-normal tracking-tight text-gray-900 mb-2">Welcome to Vesaki</h1>
+          <h1 className="text-5xl font-serif font-normal tracking-tight text-gray-900 mb-2">Welcome to Scootpie</h1>
           <p className="text-xl text-gray-700">Let's set up your personal styling experience</p>
         </div>
         <div className="space-y-6">

@@ -401,7 +401,7 @@ export default function SwipePage() {
       <div className="hidden lg:block fixed bottom-20 left-10 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl animate-pulse pointer-events-none z-0 lg:left-[calc(224px+2.5rem)]" style={{animationDelay: '1s'}}></div>
       
       {/* Desktop Header */}
-      <div className="hidden lg:flex items-center justify-between h-14 px-6 border-b border-gray-200 bg-white relative z-10 shrink-0">
+      <div className="hidden lg:flex items-center justify-between h-14 px-6 border-b border-gray-200 bg-white/95 backdrop-blur-sm sticky top-0 z-30 shrink-0">
         <div>
           <h1 className="text-lg font-semibold">Discover Fashion</h1>
         </div>
@@ -441,7 +441,7 @@ export default function SwipePage() {
       </div>
 
       {/* Mobile Header */}
-      <div className="lg:hidden px-4 py-4 space-y-3 border-b border-gray-200/50 bg-white/80 backdrop-blur-xl relative z-10 shrink-0">
+      <div className="lg:hidden px-4 py-4 space-y-3 border-b border-gray-200/50 bg-white/80 backdrop-blur-xl sticky top-0 z-30 shrink-0">
         <div>
           <h1 className="text-2xl font-serif font-bold text-[#1A1A1A] tracking-[-0.04em]">Discover</h1>
         </div>

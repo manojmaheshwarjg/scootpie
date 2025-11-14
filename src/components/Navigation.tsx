@@ -25,7 +25,7 @@ export function Navigation() {
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#8B5CF6]">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
-            <span className="text-base font-semibold">Vesaki</span>
+            <span className="text-base font-semibold">Scootpie</span>
           </Link>
         </div>
 
